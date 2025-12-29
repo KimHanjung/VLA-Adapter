@@ -28,6 +28,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 import wandb
 
 from experiments.robot.openvla_utils import (
+    get_vla,
     check_model_logic_mismatch,
     model_is_on_hf_hub,
     update_auto_map
@@ -69,7 +70,11 @@ class FinetuneConfig:
     config_file_path: str = "openvla/openvla-7b"     # Path to necessary config files of LA-Adapter
     vlm_path: str = "openvla/openvla-7b"             # Path to OpenVLA model (on HuggingFace Hub or stored locally)
     use_minivlm: bool = False                        # 
-    resum_vla_path: str = "openvla/openvla-7b"       # Path to OpenVLA model (on HuggingFace Hub or stored locally)
+    resume_vla_path: str = "openvla/openvla-7b"       # Path to OpenVLA model (on HuggingFace Hub or stored locally)
+    load_pretrained_vla: bool = False                # If True, loads pretrained VLA weights from `resum_vla_path`
+    
+    load_in_8bit: bool = False                      # If True, loads model in 8-bit precision using bitsandbytes
+    load_in_4bit: bool = False                      # If True, loads model in 4-bit precision using bitsandbytes
 
     # Dataset
     data_root_dir: Path = Path("datasets/rlds")      # Directory containing RLDS datasets
@@ -272,9 +277,23 @@ def init_module(
     module = module_class(**module_args)
     count_parameters(module, module_name)
 
-    if cfg.resume:
-        state_dict = load_checkpoint(module_name, cfg.resum_vla_path, cfg.resume_step)
-        module.load_state_dict(state_dict)
+    if cfg.resume or cfg.load_pretrained_vla:
+        state_dict = load_checkpoint(module_name, cfg.resume_vla_path, cfg.resume_step)
+        mismatched_keys = [             # action dim difference between pretrain and finetune. NOTE: load randomly initialized weights for these layers
+            "model.layer_norm1.weight",
+            "model.layer_norm1.bias",
+            "model.fc1.weight",
+            "model.fc2.weight",
+            "model.fc2.bias",
+        ]
+        
+        for key in mismatched_keys:
+            if key in state_dict:
+                del state_dict[key]
+
+        missing_keys, unexpected_keys = module.load_state_dict(state_dict, strict=False)
+        for key in missing_keys:
+            print(f"Missing key when loading {module_name} checkpoint: {key}")
         print('loaded!!!!!!!!!')
 
     if to_bf16:
@@ -775,45 +794,48 @@ def finetune(cfg: FinetuneConfig) -> None:
     processor = AutoProcessor.from_pretrained(cfg.config_file_path, trust_remote_code=True)
 
     if cfg.use_minivlm:
-        hf_token = ''
-        if 'prism-qwen25-extra-dinosiglip-224px-0_5b' in cfg.vlm_path:
-            
-            vlm = load(cfg.vlm_path, hf_token=hf_token, load_for_training=True)
+        if cfg.load_pretrained_vla:
+            vla = get_vla(cfg, train=True)
         else:
-            vlm = load_vla(
-                cfg.vlm_path,
-                hf_token=hf_token,
-                load_for_training=True,
-                )
-        config = AutoConfig.from_pretrained("pretrained_models/configs/config.json")
-        vla = AutoModelForVision2Seq.from_config(config, torch_dtype=torch.bfloat16).to(device_id)  # Create a new model with configuration, the parameters are randomly initialized
-        # for name, param in model.named_parameters():
-        #     print(f"{name}: {param.shape}")
-        replace_map = [
-            ("vision_backbone.dino_featurizer", "vision_backbone.featurizer"),
-            ("vision_backbone.siglip_featurizer", "vision_backbone.fused_featurizer"),
-            ("llm_backbone.llm", "language_model"),
-            ("projector.projector.0", "projector.fc1"),
-            ("projector.projector.2", "projector.fc2"),
-            ("projector.projector.4", "projector.fc3"),
-            ("gamma", "scale_factor"),
-            ]
+            hf_token = ''
+            if 'prism-qwen25-extra-dinosiglip-224px-0_5b' in cfg.vlm_path:
+                
+                vlm = load(cfg.vlm_path, hf_token=hf_token, load_for_training=True)
+            else:
+                vlm = load_vla(
+                    cfg.vlm_path,
+                    hf_token=hf_token,
+                    load_for_training=True,
+                    )
+            config = AutoConfig.from_pretrained("pretrained_models/configs/config.json")
+            vla = AutoModelForVision2Seq.from_config(config, torch_dtype=torch.bfloat16).to(device_id)  # Create a new model with configuration, the parameters are randomly initialized
+            # for name, param in model.named_parameters():
+            #     print(f"{name}: {param.shape}")
+            replace_map = [
+                ("vision_backbone.dino_featurizer", "vision_backbone.featurizer"),
+                ("vision_backbone.siglip_featurizer", "vision_backbone.fused_featurizer"),
+                ("llm_backbone.llm", "language_model"),
+                ("projector.projector.0", "projector.fc1"),
+                ("projector.projector.2", "projector.fc2"),
+                ("projector.projector.4", "projector.fc3"),
+                ("gamma", "scale_factor"),
+                ]
 
-        def rename_state_dict_keys(state_dict, replace_map):
-            new_state_dict = {}
-            for k, v in state_dict.items():
-                new_k = k
-                for old, new in replace_map:
-                    if old in new_k:
-                        new_k = new_k.replace(old, new)
-                new_state_dict[new_k] = v
-            return new_state_dict
+            def rename_state_dict_keys(state_dict, replace_map):
+                new_state_dict = {}
+                for k, v in state_dict.items():
+                    new_k = k
+                    for old, new in replace_map:
+                        if old in new_k:
+                            new_k = new_k.replace(old, new)
+                    new_state_dict[new_k] = v
+                return new_state_dict
+            
+            old_state_dict = vlm.state_dict()
+            RAW_STATE_DICT = rename_state_dict_keys(old_state_dict, replace_map)
         
-        old_state_dict = vlm.state_dict()
-        RAW_STATE_DICT = rename_state_dict_keys(old_state_dict, replace_map)
-    
-        missing_keys, unexpected_keys = vla.load_state_dict(RAW_STATE_DICT, strict=False)
-        del old_state_dict
+            missing_keys, unexpected_keys = vla.load_state_dict(RAW_STATE_DICT, strict=False)
+            del old_state_dict
 
     else:
         RAW_STATE_DICT ={}

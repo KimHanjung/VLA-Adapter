@@ -269,7 +269,7 @@ def load_component_state_dict_v1(checkpoint_path: str) -> Dict[str, torch.Tensor
     return new_state_dict
 
 
-def get_vla(cfg: Any) -> torch.nn.Module:
+def get_vla(cfg: Any, train: bool = False) -> torch.nn.Module:
     """
     Load and initialize the VLA model from checkpoint.
 
@@ -286,7 +286,11 @@ def get_vla(cfg: Any) -> torch.nn.Module:
     # actually go into effect
     # If loading a pretrained checkpoint from Hugging Face Hub, we just assume that the policy
     # will be used as is, with its original modeling logic
-    if not model_is_on_hf_hub(cfg.pretrained_checkpoint):
+    if train:
+        checkpoint_path = cfg.resume_vla_path
+    else:
+        checkpoint_path = cfg.pretrained_checkpoint
+    if not model_is_on_hf_hub(checkpoint_path):
         # Register OpenVLA model to HF Auto Classes (not needed if the model is on HF Hub)
         AutoConfig.register("openvla", OpenVLAConfig)
         AutoImageProcessor.register(OpenVLAConfig, PrismaticImageProcessor)
@@ -294,12 +298,12 @@ def get_vla(cfg: Any) -> torch.nn.Module:
         AutoModelForVision2Seq.register(OpenVLAConfig, OpenVLAForActionPrediction)
 
         # Update config.json and sync model files
-        update_auto_map(cfg.pretrained_checkpoint)
-        check_model_logic_mismatch(cfg.pretrained_checkpoint)
+        update_auto_map(checkpoint_path)
+        check_model_logic_mismatch(checkpoint_path)
 
     # Load the model
     vla = AutoModelForVision2Seq.from_pretrained(
-        cfg.pretrained_checkpoint,
+        checkpoint_path,
         # attn_implementation="flash_attention_2",
         torch_dtype=torch.bfloat16,
         load_in_8bit=cfg.load_in_8bit,
@@ -307,6 +311,9 @@ def get_vla(cfg: Any) -> torch.nn.Module:
         low_cpu_mem_usage=False,
         trust_remote_code=False,
     )
+    
+    if train:
+        return vla.to(DEVICE)
 
     # If using FiLM, wrap the vision backbone to allow for infusion of language inputs
     if cfg.use_film:
