@@ -90,6 +90,21 @@ def normalize_action_and_proprio(traj: Dict, metadata: Dict, normalization_type:
             )
 
         return traj
+    
+    elif normalization_type == NormalizationType.TANH:
+        for key, traj_key in keys_to_normalize.items():
+            mask = metadata[key].get("mask", tf.ones_like(metadata[key]["mean"], dtype=tf.bool))
+            traj = dl.transforms.selective_tree_map(
+                traj,
+                match=lambda k, _: k == traj_key,
+                map_fn=lambda x: tf.where(
+                    mask,
+                    tf.tanh(x / 1.0),  # Scale factor can be adjusted if needed
+                    x,
+                ),
+            )
+
+        return traj
 
     raise ValueError(f"Unknown Normalization Type {normalization_type}")
 

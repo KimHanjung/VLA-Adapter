@@ -21,6 +21,7 @@ class NormalizationType(str, Enum):
     NORMAL = "normal"               # Normalize to Mean = 0, Stdev = 1
     BOUNDS = "bounds"               # Normalize to Interval = [-1, 1]
     BOUNDS_Q99 = "bounds_q99"       # Normalize [quantile_01, ..., quantile_99] --> [-1, ..., 1]
+    TANH = "tanh"                 # Scale using tanh
     # fmt: on
 
 
@@ -53,12 +54,22 @@ BRIDGE_CONSTANTS = {
     "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.BOUNDS_Q99,
 }
 
+LATENT_CONSTANTS = {
+    "NUM_ACTIONS_CHUNK": 1,
+    "ACTION_DIM": 64,
+    "PROPRIO_DIM": 1,
+    "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.TANH,
+}
+
+
 
 # Function to detect robot platform from command line arguments
 def detect_robot_platform():
     cmd_args = " ".join(sys.argv).lower()
 
-    if "libero" in cmd_args:
+    if "latent" in cmd_args:
+        return "LATENT"
+    elif "libero" in cmd_args:
         return "LIBERO"
     elif "aloha" in cmd_args:
         return "ALOHA"
@@ -83,6 +94,8 @@ elif ROBOT_PLATFORM == "BRIDGE":
     constants = BRIDGE_CONSTANTS
 elif ROBOT_PLATFORM == "CALVIN":
     constants = CALVIN_CONSTANTS
+elif ROBOT_PLATFORM == "LATENT":
+    constants = LATENT_CONSTANTS
 
 # Assign constants to global variables
 NUM_ACTIONS_CHUNK = constants["NUM_ACTIONS_CHUNK"]

@@ -873,6 +873,22 @@ def aloha_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     # Don't need to do anything because dataset is already in the correct format
     return trajectory
 
+def latent_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    # Since latent action is extracted between two frames, length is len-1
+    for key in trajectory.keys():
+        if key == "traj_metadata":
+            continue
+        elif key == "observation":
+            for key2 in trajectory[key]:
+                trajectory[key][key2] = trajectory[key][key2][:-1]
+        else:
+            trajectory[key] = trajectory[key][:-1]
+            if key == "action":
+                trajectory[key] = tf.zeros(
+                    shape=(tf.shape(trajectory[key])[0], 64), dtype=tf.float32 # NOTE: assume latent action dimension is 64
+                )
+    return trajectory
+
 
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
@@ -960,4 +976,6 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     "aloha1_fold_shirt_30_demos": aloha_dataset_transform,
     "aloha1_scoop_X_into_bowl_45_demos": aloha_dataset_transform,
     "aloha1_put_X_into_pot_300_demos": aloha_dataset_transform,
+    ### Latent datasets
+    "bridge_latent": latent_dataset_transform,
 }

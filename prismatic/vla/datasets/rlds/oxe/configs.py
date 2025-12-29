@@ -47,6 +47,7 @@ class ActionEncoding(IntEnum):
     JOINT_POS = 2           # Joint Delta Position (7) + Gripper Open/Close (1)
     JOINT_POS_BIMANUAL = 3  # Joint Delta Position (2 x [ Joint Delta Position (6) + Gripper Open/Close (1) ])
     EEF_R6 = 4              # EEF Delta XYZ (3) + R6 (6) + Gripper Open/Close (1)
+    EEF_LATENT = 5          # EEF Latent Action (64)
     # fmt: on
 
 
@@ -719,5 +720,16 @@ OXE_DATASET_CONFIGS = {
         "state_obs_keys": ["state"],
         "state_encoding": StateEncoding.JOINT_BIMANUAL,
         "action_encoding": ActionEncoding.JOINT_POS_BIMANUAL,
+    },
+    "bridge_latent": {  # Original version of Bridge V2 from project website
+        "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": [None],
+        "state_encoding": StateEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_LATENT,
+        "latent_keys": {
+            "path": "/workspace/datasets/bridge/labels_hnet/bridge_v10.npz",
+            "skill_key": "hnet_enc_0",
+        }
     },
 }

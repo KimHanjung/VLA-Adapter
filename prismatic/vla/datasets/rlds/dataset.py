@@ -9,6 +9,7 @@ import inspect
 import json
 from functools import partial
 from typing import Callable, Dict, List, Optional, Tuple, Union
+from pathlib import Path
 
 import dlimp as dl
 import numpy as np
@@ -53,6 +54,7 @@ def make_dataset_from_rlds(
     action_normalization_mask: Optional[List[bool]] = None,
     num_parallel_reads: int = tf.data.AUTOTUNE,
     num_parallel_calls: int = tf.data.AUTOTUNE,
+    latent_keys: Dict[str, Optional[str]] = {},
 ) -> Tuple[dl.DLataset, dict]:
     """
     This function is responsible for loading a specific RLDS dataset from storage and getting it into a standardized
@@ -137,7 +139,30 @@ def make_dataset_from_rlds(
             raise ValueError(
                 f"Trajectory is missing keys: {REQUIRED_KEYS - set(traj.keys())}. " "Did you write a `standardize_fn`?"
             )
-
+        if latent_file is not None:
+            def _load_latent_action(path_tensor, ref_action_tensor):
+                path_str = path_tensor.numpy().decode('utf-8')
+                vid_id = Path(path_str).stem
+                
+                try:
+                    traj_latent = latent_file[vid_id].item()
+                    new_action = traj_latent[skill_key]
+                    return new_action.astype(np.float32), True
+                except KeyError:
+                    dummy_len  = ref_action_tensor.shape[0]
+                    return np.zeros((dummy_len, ACTION_DIM), dtype=np.float32), False
+            original_path_tensor = traj["traj_metadata"]["episode_metadata"]["file_path"][0]
+            
+            new_action_tensor, is_valid_tensor = tf.py_function(
+                func=_load_latent_action,
+                inp=[original_path_tensor, traj['action']],
+                Tout=[tf.float32, tf.bool],
+            )
+            new_action_tensor.set_shape([traj['action'].shape[0], ACTION_DIM])
+            traj['action'] = new_action_tensor
+            traj["_valid_mask"] = is_valid_tensor
+        else:
+            traj["_valid_mask"] = tf.constant(True, dtype=tf.bool)
         # extracts images, depth images and proprio from the "observation" dict
         traj_len = tf.shape(traj["action"])[0]
         old_obs = traj["observation"]
@@ -184,6 +209,7 @@ def make_dataset_from_rlds(
             "task": task,
             "action": tf.cast(traj["action"], tf.float32),
             "dataset_name": tf.repeat(name, traj_len),
+            "_valid_mask": traj["_valid_mask"],
         }
 
         if absolute_action_mask is not None:
@@ -200,6 +226,13 @@ def make_dataset_from_rlds(
         return traj
 
     builder = tfds.builder(name, data_dir=data_dir)
+    latent_file = None
+    if latent_keys:
+        path = latent_keys.get('path', None)
+        skill_key = latent_keys.get('skill_key', None)
+        if path is None or skill_key is None:
+            raise ValueError("Both 'path' and 'skill_key' must be provided in latent_keys.")
+        latent_file = np.load(path, allow_pickle=True)
 
     # load or compute dataset statistics
     if isinstance(dataset_statistics, str):
@@ -209,6 +242,7 @@ def make_dataset_from_rlds(
         full_dataset = dl.DLataset.from_rlds(
             builder, split="all", shuffle=False, num_parallel_reads=num_parallel_reads
         ).traj_map(restructure, num_parallel_calls)
+        full_dataset = full_dataset.filter(lambda traj: traj["_valid_mask"])
         # tries to load from cache, otherwise computes on the fly
         dataset_statistics = get_dataset_statistics(
             full_dataset,
@@ -236,6 +270,10 @@ def make_dataset_from_rlds(
     dataset = dl.DLataset.from_rlds(builder, split=split, shuffle=shuffle, num_parallel_reads=num_parallel_reads)
 
     dataset = dataset.traj_map(restructure, num_parallel_calls)
+    dataset = dataset.filter(lambda traj: traj["_valid_mask"])
+    dataset = dataset.traj_map(lambda traj: {k: v for k, v in traj.items() if k != "_valid_mask"}, num_parallel_calls)
+    
+    
     dataset = dataset.traj_map(
         partial(
             normalize_action_and_proprio,
