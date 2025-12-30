@@ -277,7 +277,7 @@ def init_module(
     module = module_class(**module_args)
     count_parameters(module, module_name)
 
-    if cfg.resume or cfg.load_pretrained_vla:
+    if cfg.resume or (cfg.load_pretrained_vla and "proprio" not in module_name):
         state_dict = load_checkpoint(module_name, cfg.resume_vla_path, cfg.resume_step)
         mismatched_keys = [             # action dim difference between pretrain and finetune. NOTE: load randomly initialized weights for these layers
             "model.layer_norm1.weight",
@@ -599,8 +599,9 @@ def save_training_checkpoint(
         if cfg.use_minivlm:
             config = AutoConfig.from_pretrained("pretrained_models/configs/config.json")
             base_vla = AutoModelForVision2Seq.from_config(config, torch_dtype=torch.bfloat16)  # Create a new model with configuration, the parameters are randomly initialized
+            if not cfg.load_pretrained_vla:
             # print(new_state_dict['action_queries.weight'])
-            new_state_dict['action_queries.weight'] = vla.state_dict()['module.base_model.model.action_queries.weight'].cpu()
+                new_state_dict['action_queries.weight'] = vla.state_dict()['module.base_model.model.action_queries.weight'].cpu()
             missing_keys, unexpected_keys = base_vla.load_state_dict(new_state_dict, strict=False)
             
         else:
@@ -796,6 +797,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     if cfg.use_minivlm:
         if cfg.load_pretrained_vla:
             vla = get_vla(cfg, train=True)
+            RAW_STATE_DICT = {}
         else:
             hf_token = ''
             if 'prism-qwen25-extra-dinosiglip-224px-0_5b' in cfg.vlm_path:
