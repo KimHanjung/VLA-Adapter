@@ -105,6 +105,9 @@ def normalize_action_and_proprio(traj: Dict, metadata: Dict, normalization_type:
             )
 
         return traj
+    
+    elif normalization_type == NormalizationType.IDENTITY:
+        return traj
 
     raise ValueError(f"Unknown Normalization Type {normalization_type}")
 

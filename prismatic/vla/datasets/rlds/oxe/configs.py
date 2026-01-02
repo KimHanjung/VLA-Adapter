@@ -728,7 +728,7 @@ OXE_DATASET_CONFIGS = {
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_LATENT,
         "latent_keys": {
-            "path": "/workspace/datasets/bridge/labels_hnet/bridge_v10.npz",
+            "path": "/workspace/datasets/bridge/labels_hnet/bridge_v12.npz",
             "skill_key": "hnet_enc_0",
         }
     },

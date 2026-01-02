@@ -22,6 +22,7 @@ class NormalizationType(str, Enum):
     BOUNDS = "bounds"               # Normalize to Interval = [-1, 1]
     BOUNDS_Q99 = "bounds_q99"       # Normalize [quantile_01, ..., quantile_99] --> [-1, ..., 1]
     TANH = "tanh"                 # Scale using tanh
+    IDENTITY = "identity"           # No normalization
     # fmt: on
 
 
@@ -58,7 +59,7 @@ LATENT_CONSTANTS = {
     "NUM_ACTIONS_CHUNK": 1,
     "ACTION_DIM": 64,
     "PROPRIO_DIM": 1,
-    "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.TANH,
+    "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.IDENTITY,
 }
 
 
