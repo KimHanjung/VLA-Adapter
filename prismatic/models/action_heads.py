@@ -34,7 +34,8 @@ class L1RegressionActionHead(nn.Module):
         self.hidden_dim = hidden_dim
         self.model = MLPResNet(
             num_blocks=24, 
-            input_dim=input_dim*ACTION_DIM, 
+            # input_dim=input_dim*ACTION_DIM, 
+            input_dim=input_dim*7, 
             hidden_dim=hidden_dim, 
             output_dim=action_dim,
             use_pro_version=use_pro_version
@@ -60,8 +61,12 @@ class L1RegressionActionHead(nn.Module):
         task_hidden_states = actions_hidden_states[:, :, :self.num_task_tokens, :]
         actions_hidden_states = actions_hidden_states[:, :, self.num_task_tokens:, :]
 
+        # cond_actions_hidden_states = torch.zeros(
+        #     (batch_size, self.action_dim * NUM_ACTIONS_CHUNK, self.hidden_dim),
+        #     device=device, dtype=actions_hidden_states.dtype
+        # ).detach()  
         cond_actions_hidden_states = torch.zeros(
-            (batch_size, self.action_dim * NUM_ACTIONS_CHUNK, self.hidden_dim),
+            (batch_size, 7 * NUM_ACTIONS_CHUNK, self.hidden_dim),
             device=device, dtype=actions_hidden_states.dtype
         ).detach()  
 

@@ -280,16 +280,16 @@ def init_module(
     if cfg.resume or (cfg.load_pretrained_vla and "proprio" not in module_name):
         state_dict = load_checkpoint(module_name, cfg.resume_vla_path, cfg.resume_step)
         mismatched_keys = [             # action dim difference between pretrain and finetune. NOTE: load randomly initialized weights for these layers
-            "model.layer_norm1.weight",
-            "model.layer_norm1.bias",
-            "model.fc1.weight",
+            # "model.layer_norm1.weight",
+            # "model.layer_norm1.bias",
+            # "model.fc1.weight",
             "model.fc2.weight",
             "model.fc2.bias",
         ]
-        
-        for key in mismatched_keys:
-            if key in state_dict:
-                del state_dict[key]
+        if (cfg.load_pretrained_vla and "proprio" not in module_name):
+            for key in mismatched_keys:
+                if key in state_dict:
+                    del state_dict[key]
 
         missing_keys, unexpected_keys = module.load_state_dict(state_dict, strict=False)
         for key in missing_keys:
