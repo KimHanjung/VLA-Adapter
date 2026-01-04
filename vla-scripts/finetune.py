@@ -277,7 +277,13 @@ def init_module(
     module = module_class(**module_args)
     count_parameters(module, module_name)
 
-    if cfg.resume or (cfg.load_pretrained_vla and "proprio" not in module_name):
+    # if cfg.resume or (cfg.load_pretrained_vla and "proprio" not in module_name):
+    if cfg.resume:
+        state_dict = load_checkpoint(module_name, cfg.resume_vla_path, cfg.resume_step)
+        module.load_state_dict(state_dict)
+        print('loaded!!!!!!!!!')
+    
+    elif cfg.load_pretrained_vla and "proprio" not in module_name and False:
         state_dict = load_checkpoint(module_name, cfg.resume_vla_path, cfg.resume_step)
         mismatched_keys = [             # action dim difference between pretrain and finetune. NOTE: load randomly initialized weights for these layers
             # "model.layer_norm1.weight",
@@ -757,7 +763,7 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # Initialize wandb logging
     if distributed_state.is_main_process:
-        wandb.init(project=cfg.wandb_project, name=f"ft+{run_id}", mode="offline")
+        wandb.init(project=cfg.wandb_project, name=f"ft+{run_id}", mode="online")
 
     # Print detected constants
     print(
