@@ -597,12 +597,21 @@ def save_training_checkpoint(
     # Note: Can be very slow on some devices; if so, we recommend merging offline
     if cfg.use_lora and cfg.merge_lora_during_training:
         if cfg.use_minivlm:
-            config = AutoConfig.from_pretrained("pretrained_models/configs/config.json")
-            base_vla = AutoModelForVision2Seq.from_config(config, torch_dtype=torch.bfloat16)  # Create a new model with configuration, the parameters are randomly initialized
-            if not cfg.load_pretrained_vla:
-            # print(new_state_dict['action_queries.weight'])
+            # inside save_training_checkpoint, merge branch for use_minivlm
+            if cfg.load_pretrained_vla:
+                base_vla = AutoModelForVision2Seq.from_pretrained(
+                    cfg.resume_vla_path, torch_dtype=torch.bfloat16, low_cpu_mem_usage=False, trust_remote_code=False
+                )
+                # Preserve finetuned action_queries (not part of LoRA adapter)
+                with torch.no_grad():
+                    aq = vla.module.base_model.model.action_queries.weight.detach().cpu()
+                    base_vla.action_queries.weight.copy_(aq)
+            else:
+                config = AutoConfig.from_pretrained("pretrained_models/configs/config.json")
+                base_vla = AutoModelForVision2Seq.from_config(config, torch_dtype=torch.bfloat16)  # Create a new model with configuration, the parameters are randomly initialized
                 new_state_dict['action_queries.weight'] = vla.state_dict()['module.base_model.model.action_queries.weight'].cpu()
-            missing_keys, unexpected_keys = base_vla.load_state_dict(new_state_dict, strict=False)
+
+                missing_keys, unexpected_keys = base_vla.load_state_dict(new_state_dict, strict=False)
             
         else:
             base_vla = AutoModelForVision2Seq.from_pretrained(
